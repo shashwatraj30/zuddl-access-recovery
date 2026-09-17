@@ -31,28 +31,41 @@ This isn't a hypothetical. It's a documented complaint from a real Zuddl custome
 
 ## How to use it
 
-The flow is the same whether you're clicking through the pages in a browser or hitting the API directly:
+There are now two real, database-backed roles in this demo — not just the recovery flow:
 
+**Becoming a registered attendee:**
+1. Go to `/signup.html`, enter a name and email, submit
+2. This writes a real row into the Supabase `attendees` table — this is the *only* way an email becomes eligible to recover access later
+
+**Recovering access (the core feature):**
 1. **Attendee can't log in** → lands on the login screen, clicks **"Can't find your access link?"**
 2. **Enters their email** → submits the recovery form. The response is worded identically whether or not that email is actually registered — this is deliberate, explained below.
-3. **Checks their inbox** → gets a fresh one-time link (in this demo, a mock inbox page shows the "email" instead of a real one being sent)
+3. **Checks their inbox** → gets a fresh one-time link (in this demo, a mock inbox page shows the "email" instead of a real one being sent) — but only if that email was actually signed up; an unregistered email gets the same polite message and an empty inbox, nothing more
 4. **Clicks the link** → signed in immediately, and that link is now dead — using it again fails on purpose
 5. **Organizer/support view** → a separate audit page shows every recovery attempt (successful, failed, rate-limited) with a timestamp, so there's a real trail if something needs investigating
 
-That five-step flow is the entire product.
+**Seeing who's registered (admin):**
+1. Go to `/admin.html`, enter the `ADMIN_KEY` you set in `.env`
+2. See every registered attendee, pulled live from Supabase — register someone new on `/signup.html` and refresh this page to watch them appear
 
 ---
 
 ## Running it locally
 
+This project stores registered attendees in a real Supabase (Postgres) database — one-time setup takes about 5 minutes. Full step-by-step instructions are in **[SUPABASE_SETUP.md](./SUPABASE_SETUP.md)**.
+
+Short version, once you have a Supabase project and have run `schema.sql` in its SQL editor:
+
 ```bash
 git clone https://github.com/shashwatraj30/zuddl-access-recovery.git
 cd zuddl-access-recovery
+cp .env.example .env
+# edit .env with your Supabase URL, service key, and a chosen ADMIN_KEY
 npm install
 npm start
 ```
 
-Then open **http://localhost:3000** in your browser. That's the login screen — everything else is linked from there.
+Then open **http://localhost:3000** in your browser. That's the login screen — everything else is linked from there, including sign-up (`/signup.html`) and the admin view (`/admin.html`).
 
 ---
 
@@ -61,23 +74,25 @@ Then open **http://localhost:3000** in your browser. That's the login screen —
 This isn't just "does the page load" — the point of this project is the security behavior underneath it. Here's how to check that it's doing what it claims, step by step, with what you should see at each point.
 
 ### A. Walk the happy path
-1. Go to `/recover.html`
-2. Enter `priya.sharma@example.com` (a seeded mock attendee) → submit
+1. Go to `/signup.html`, register with your own name and a real-looking email (e.g. `you@example.com`)
+2. Go to `/recover.html`, enter that same email → submit
 3. **Expect:** a confirmation message, no error
 4. Go to `/inbox.html`, select the same email, refresh
 5. **Expect:** a message appears with a link containing a long token
 6. Click that link
-7. **Expect:** you land on `/verify.html` and see "You're in" / a welcome message with the attendee's name
+7. **Expect:** you land on `/verify.html` and see "You're in" / a welcome message with your name
 
-If all of that happens — the core loop works.
+If all of that happens — the core loop, backed by a real database write and read, works.
 
-### B. Confirm it doesn't leak who's registered (no-enumeration check)
-1. Go back to `/recover.html`
-2. Submit `priya.sharma@example.com` (registered), note the exact message
-3. Submit `nobody@example.com` (not registered), note the exact message
+### B. Confirm unregistered emails are truly rejected, not just told the same message
+1. Go to `/recover.html`
+2. Submit the email you registered in test A (registered), note the exact message
+3. Submit a made-up email you never signed up with, e.g. `nobody-real@example.com` (not registered), note the exact message
 4. **Expect:** both messages are word-for-word identical
+5. Now go to `/inbox.html`, select `nobody-real@example.com`, refresh
+6. **Expect:** the inbox is empty — no token was ever generated for an email that isn't in the database
 
-If they differ in any way, that's a real security bug — this check is the one that matters most.
+Step 4 alone isn't enough proof — step 6 is what actually confirms the unregistered email got nothing real, not just an identical-sounding message. This is the single most important check in the whole project.
 
 ### C. Confirm single-use enforcement
 1. Take a link you already clicked once from step A
@@ -99,6 +114,14 @@ If the 4th request still succeeds, rate limiting isn't working.
 2. **Expect:** every single attempt you made shows up — successful requests, the reused-token failure, the invalid-token failure, and the rate-limited attempts — each tagged with its outcome and a timestamp
 
 If any of your actions from A–E are missing here, logging has a gap.
+
+### G. Confirm the admin view is both gated and accurate
+1. Go to `/admin.html`, try an obviously wrong key
+2. **Expect:** "Invalid admin key" — nothing is shown
+3. Enter the real `ADMIN_KEY` from your `.env`
+4. **Expect:** every attendee you've registered so far appears, with name, email, and registration time
+5. Go register one more person on `/signup.html`, come back to `/admin.html`, click "View" again
+6. **Expect:** the new person appears immediately — proving this is a live query, not a cached or hardcoded list
 
 ### Fastest way to test all of this without clicking through pages
 If you have `curl` available, you can hit the API directly and see the raw responses:
@@ -125,6 +148,14 @@ curl "http://localhost:3000/api/verify?token=PASTE_TOKEN_HERE"
 
 # View the audit log
 curl http://localhost:3000/api/audit-log
+
+# Register a new attendee
+curl -X POST http://localhost:3000/api/signup \
+  -H "Content-Type: application/json" \
+  -d '{"name":"Your Name","email":"you@example.com","eventId":"evt_2026_summit"}'
+
+# View all registered attendees (replace with your real ADMIN_KEY)
+curl http://localhost:3000/api/admin/attendees -H "x-admin-key: YOUR_ADMIN_KEY"
 ```
 
 If every one of checks A–F above matches what's "expected," the project is fulfilling its intended outcome: attendees can recover access on their own, without a way to abuse the mechanism to spam, enumerate, or replay their way in.
@@ -149,18 +180,24 @@ The interesting part of this project is the backend, not the UI. A recovery flow
 
 ```
 zuddl-access-recovery/
-├── server.js              # Express app — routes only, logic lives in src/
+├── server.js               # Express app — routes only, logic lives in src/
+├── schema.sql              # Run once in Supabase's SQL editor to create the attendees table
+├── .env.example            # Template for your Supabase credentials + admin key
+├── SUPABASE_SETUP.md       # Step-by-step Supabase project setup
 ├── src/
-│   ├── tokenService.js    # Token generation, hashing, expiry, single-use enforcement
-│   ├── rateLimiter.js     # Per-email and per-IP sliding-window rate limiting
-│   ├── attendeeStore.js   # Mock attendee lookup — the ONE thing a real integration replaces
-│   ├── mailer.js          # Mock email "sender" — stores messages in an inspectable inbox
-│   └── auditLog.js        # Append-only log of every recovery attempt
+│   ├── supabaseClient.js   # Initializes the Supabase client from .env
+│   ├── attendeeStore.js    # Real Supabase queries — find, register, list attendees
+│   ├── tokenService.js     # Token generation, hashing, expiry, single-use enforcement
+│   ├── rateLimiter.js      # Per-email and per-IP sliding-window rate limiting
+│   ├── mailer.js           # Mock email "sender" — stores messages in an inspectable inbox
+│   └── auditLog.js         # Append-only log of every recovery attempt
 └── public/
-    ├── index.html         # Simulated login screen (the blocked state)
+    ├── index.html          # Simulated login screen (the blocked state)
+    ├── signup.html         # Real registration form — writes to Supabase
     ├── recover.html        # The actual recovery form
     ├── inbox.html          # Mock inbox — see the "email" that would've been sent
     ├── verify.html         # Landing page when the link is clicked
+    ├── admin.html          # Key-gated view of everyone registered, pulled live from Supabase
     └── audit.html          # Organizer-facing view of recovery activity
 ```
 
@@ -168,14 +205,15 @@ zuddl-access-recovery/
 
 ## What would change for a real deployment
 
-This is a working demo against mock data, not a production integration. To actually run inside Zuddl:
+This now runs against a real database (Supabase/Postgres), which is closer to production than a hardcoded array — but it's still a standalone demo, not an integration into Zuddl's actual platform. To actually run inside Zuddl:
 
-- `attendeeStore.js` → replace the mock array with a real call into Zuddl's attendee/registration table
+- `attendeeStore.js` → the Supabase queries would point at Zuddl's *existing* attendee/registration table instead of this project's own `attendees` table — the query shapes (`find by email+event`, `list by event`) stay the same either way
+- The `signup.html` page here exists only so this project is self-contained and demoable; a real deployment already has its own registration flow, so this page wouldn't be needed — attendees would already exist from Zuddl's normal registration process
 - `mailer.js` → replace the mock inbox with a real transactional email sender (whatever Zuddl already uses to send confirmation emails)
 - Token storage → move from an in-memory `Map` to Redis or a database table (the logic doesn't change, only where it's stored)
-- Add the organizer audit view as an actual panel in Zuddl's dashboard, rather than a standalone page
+- `admin.html`'s shared-secret key → replaced by Zuddl's real organizer/admin authentication, and folded into their existing dashboard rather than a standalone page
 
-None of these are structural changes — the security logic (hashing, single-use, rate limiting, no-enumeration) stays exactly as it is.
+None of these are structural changes — the security logic (hashing, single-use, rate limiting, no-enumeration) stays exactly as it is. See **[ZUDDL_INTEGRATION.md](./ZUDDL_INTEGRATION.md)** for the full integration writeup.
 
 ---
 

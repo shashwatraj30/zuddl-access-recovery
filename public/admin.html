@@ -1,0 +1,87 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Admin - Registered Attendees</title>
+<link rel="stylesheet" href="styles.css">
+<style>
+  .wrap { max-width: 640px; }
+  table { width: 100%; border-collapse: collapse; font-size: 13px; }
+  th, td { text-align: left; padding: 9px 10px; border-bottom: 1px solid var(--border); }
+  th { color: var(--text-dim); font-weight: 500; }
+  td.mono { font-size: 12px; }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <div class="mark">
+    Event Summit 2026 &middot; Admin &middot; Registered Attendees
+  </div>
+  <h1>Who's registered</h1>
+  <p class="sub">This is a real query against the Supabase attendees table — not mock data. Gated by an admin key rather than a full login, since this is a demo.</p>
+
+  <div class="card">
+    <label>Admin key</label>
+    <input type="text" id="adminKey" placeholder="Paste your ADMIN_KEY">
+    <button onclick="loadAttendees()">View registered attendees</button>
+    <div id="status" class="status"></div>
+  </div>
+
+  <div class="card" style="margin-top:16px;">
+    <table>
+      <thead><tr><th>Registered</th><th>Name</th><th>Email</th></tr></thead>
+      <tbody id="rows"><tr><td colspan="3" class="empty">Enter the admin key above and click "View."</td></tr></tbody>
+    </table>
+  </div>
+
+  <a class="back-link" href="index.html">&larr; Back to sign in</a>
+</div>
+
+<script>
+async function loadAttendees() {
+  const key = document.getElementById('adminKey').value.trim();
+  const status = document.getElementById('status');
+  const rows = document.getElementById('rows');
+
+  if (!key) return;
+
+  status.className = 'status show';
+  status.textContent = 'Loading...';
+
+  try {
+    const res = await fetch('/api/admin/attendees?eventId=evt_2026_summit', {
+      headers: { 'x-admin-key': key },
+    });
+    const data = await res.json();
+
+    if (!res.ok) {
+      status.className = 'status show err';
+      status.textContent = data.error || 'Failed to load.';
+      rows.innerHTML = '<tr><td colspan="3" class="empty">Not authorized.</td></tr>';
+      return;
+    }
+
+    status.className = 'status show ok';
+    status.textContent = `${data.attendees.length} attendee(s) found.`;
+
+    if (!data.attendees.length) {
+      rows.innerHTML = '<tr><td colspan="3" class="empty">No one has registered yet.</td></tr>';
+      return;
+    }
+
+    rows.innerHTML = data.attendees.map(a => `
+      <tr>
+        <td class="mono">${new Date(a.created_at).toLocaleString()}</td>
+        <td>${a.name}</td>
+        <td>${a.email}</td>
+      </tr>
+    `).join('');
+  } catch (err) {
+    status.className = 'status show err';
+    status.textContent = 'Network error — is the server running?';
+  }
+}
+</script>
+</body>
+</html>

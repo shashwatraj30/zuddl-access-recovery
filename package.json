@@ -7,9 +7,17 @@
     "start": "node server.js",
     "dev": "node server.js"
   },
-  "keywords": ["auth", "magic-link", "event-platform", "security", "zuddl"],
+  "keywords": [
+    "auth",
+    "magic-link",
+    "event-platform",
+    "security",
+    "zuddl"
+  ],
   "license": "MIT",
   "dependencies": {
+    "@supabase/supabase-js": "^2.116.0",
+    "dotenv": "^17.4.2",
     "express": "^4.19.2"
   }
 }

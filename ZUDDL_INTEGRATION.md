@@ -33,9 +33,10 @@ Everything else in this codebase is infrastructure-agnostic. Only these three pi
 
 | Module in this repo | What it does today | What Zuddl replaces it with |
 |---|---|---|
-| `src/attendeeStore.js` | Hardcoded array of 3 mock attendees | A real query against Zuddl's attendee/registration table: `findAttendee(email, eventId)` → single row lookup. This is almost certainly already an existing internal function — reuse it, don't rebuild it. |
+| `src/attendeeStore.js` | Real queries against a Supabase Postgres table (`attendees`) that this project owns and seeds via its own `/signup.html` page | The same query shapes (`findAttendee(email, eventId)`, `listAttendees(eventId)`), pointed at Zuddl's *existing* attendee/registration table instead. This is almost certainly already an existing internal function on Zuddl's side — reuse it, don't rebuild it. Zuddl would not need this project's `signup.html` at all, since attendees already exist from Zuddl's normal registration flow. |
 | `src/mailer.js` | Writes to an in-memory mock inbox | Zuddl's existing transactional email sender (whatever currently sends registration confirmations and the original magic link). New template needed; sending mechanism should already exist. |
 | Token storage (currently a `Map` in `tokenService.js`) | In-memory, lost on restart, single-instance only | Redis is the natural fit — TTL support maps directly onto token expiry, and it survives service restarts and works across multiple app instances. A relational table works too if Redis isn't already in the stack. |
+| `public/admin.html`'s shared `ADMIN_KEY` | A single secret string checked against a request header — fine for a demo, not for production | Zuddl's real organizer/admin authentication and role system; this view becomes a panel inside their existing dashboard rather than a standalone page with its own auth |
 
 No other file needs to change. The hashing, single-use enforcement, rate limiting, and no-enumeration response logic are storage- and platform-agnostic by design.
 

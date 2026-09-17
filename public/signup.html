@@ -1,0 +1,88 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Register - Event Summit 2026</title>
+<link rel="stylesheet" href="styles.css">
+</head>
+<body>
+<div class="wrap">
+  <div class="mark">
+    <svg width="18" height="18" viewBox="0 0 24 24" fill="none">
+      <path d="M16 21v-2a4 4 0 00-4-4H6a4 4 0 00-4 4v2" stroke="#8b95a5" stroke-width="1.6"/>
+      <circle cx="9" cy="7" r="4" stroke="#8b95a5" stroke-width="1.6"/>
+      <path d="M22 21v-2a4 4 0 00-3-3.87M16 3.13a4 4 0 010 7.75" stroke="#8b95a5" stroke-width="1.6"/>
+    </svg>
+    Event Summit 2026 &middot; Registration
+  </div>
+
+  <h1>Register for the event</h1>
+  <p class="sub">This is the only place an email actually becomes "registered." Anyone who signs up here can later use the recovery flow — anyone who doesn't, can't.</p>
+
+  <div class="card">
+    <label>Full name</label>
+    <input type="text" id="name" placeholder="Priya Sharma">
+
+    <label style="margin-top:14px;">Email address</label>
+    <input type="email" id="email" placeholder="you@example.com">
+
+    <button id="signupBtn" onclick="signup()">Register for this event</button>
+    <div id="status" class="status"></div>
+  </div>
+
+  <p class="note" style="margin-top:16px;">
+    Already registered?
+    <a href="index.html" style="color:var(--accent);">Sign in</a> or
+    <a href="recover.html" style="color:var(--accent);">recover your access</a>.
+  </p>
+
+  <a class="back-link" href="index.html">&larr; Back to sign in</a>
+</div>
+
+<script>
+const EVENT_ID = 'evt_2026_summit';
+
+async function signup() {
+  const name = document.getElementById('name').value.trim();
+  const email = document.getElementById('email').value.trim();
+  const btn = document.getElementById('signupBtn');
+  const status = document.getElementById('status');
+
+  if (!name || !email) {
+    status.className = 'status show err';
+    status.textContent = 'Please fill in both fields.';
+    return;
+  }
+
+  btn.disabled = true;
+  status.className = 'status show';
+  status.textContent = 'Registering...';
+
+  try {
+    const res = await fetch('/api/signup', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ name, email, eventId: EVENT_ID }),
+    });
+    const data = await res.json();
+
+    if (!res.ok) {
+      status.className = 'status show err';
+      status.textContent = data.error || 'Something went wrong.';
+      btn.disabled = false;
+      return;
+    }
+
+    status.className = 'status show ok';
+    status.textContent = data.message;
+    btn.textContent = 'Registered ✓';
+  } catch (err) {
+    status.className = 'status show err';
+    status.textContent = 'Network error — is the server running?';
+    btn.disabled = false;
+  }
+}
+</script>
+</body>
+</html>
