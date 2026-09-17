@@ -1,0 +1,102 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Recover access - Event Summit 2026</title>
+<link rel="stylesheet" href="styles.css">
+</head>
+<body>
+<div class="wrap">
+  <div class="mark">
+    <svg width="18" height="18" viewBox="0 0 24 24" fill="none">
+      <rect x="3" y="10" width="18" height="11" rx="2" stroke="#8b95a5" stroke-width="1.6"/>
+      <path d="M7 10V7a5 5 0 0110 0v3" stroke="#8b95a5" stroke-width="1.6"/>
+    </svg>
+    Event Summit 2026 &middot; Attendee Access
+  </div>
+
+  <div class="steps">
+    <div class="step done"></div>
+    <div class="step active"></div>
+    <div class="step"></div>
+  </div>
+
+  <h1>Recover your access</h1>
+  <p class="sub">Enter the email you registered with. If it's on the guest list, we'll send a fresh link right away.</p>
+
+  <div class="card">
+    <label>Email address</label>
+    <input type="email" id="email" placeholder="you@example.com" value="priya.sharma@example.com">
+    <button id="submitBtn" onclick="requestRecovery()">Send me a new link</button>
+
+    <div id="status" class="status"></div>
+  </div>
+
+  <p class="note" id="hint" style="margin-top:16px;">
+    Try <span class="mono">priya.sharma@example.com</span> (registered) or
+    <span class="mono">nobody@example.com</span> (not registered) &mdash; notice the response looks identical either way.
+  </p>
+
+  <a class="back-link" href="index.html">&larr; Back to sign in</a>
+  <br>
+  <a class="back-link" href="inbox.html">Open mock inbox &rarr;</a>
+</div>
+
+<script>
+const EVENT_ID = 'evt_2026_summit';
+let cooldownTimer = null;
+
+async function requestRecovery() {
+  const email = document.getElementById('email').value.trim();
+  const btn = document.getElementById('submitBtn');
+  const status = document.getElementById('status');
+
+  if (!email) return;
+
+  btn.disabled = true;
+  status.className = 'status show';
+  status.textContent = 'Sending...';
+
+  try {
+    const res = await fetch('/api/recover', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ email, eventId: EVENT_ID }),
+    });
+    const data = await res.json();
+
+    if (res.status === 429) {
+      status.className = 'status show err';
+      const seconds = Math.ceil(data.retryAfterMs / 1000);
+      status.textContent = `${data.message} (try again in ~${seconds}s)`;
+      startCooldown(seconds, btn);
+      return;
+    }
+
+    status.className = 'status show ok';
+    status.textContent = data.message;
+    startCooldown(30, btn);
+  } catch (err) {
+    status.className = 'status show err';
+    status.textContent = 'Something went wrong. Please try again.';
+    btn.disabled = false;
+  }
+}
+
+function startCooldown(seconds, btn) {
+  let remaining = seconds;
+  btn.disabled = true;
+  clearInterval(cooldownTimer);
+  cooldownTimer = setInterval(() => {
+    remaining -= 1;
+    btn.textContent = remaining > 0 ? `Try again in ${remaining}s` : 'Send me a new link';
+    if (remaining <= 0) {
+      clearInterval(cooldownTimer);
+      btn.disabled = false;
+    }
+  }, 1000);
+}
+</script>
+</body>
+</html>

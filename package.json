@@ -1,0 +1,15 @@
+{
+  "name": "zuddl-access-recovery",
+  "version": "1.0.0",
+  "description": "Self-serve access recovery module for magic-link login flows (built as a Zuddl add-on concept)",
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js",
+    "dev": "node server.js"
+  },
+  "keywords": ["auth", "magic-link", "event-platform", "security", "zuddl"],
+  "license": "MIT",
+  "dependencies": {
+    "express": "^4.19.2"
+  }
+}

@@ -1,0 +1,68 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Recovery activity - Organizer view</title>
+<link rel="stylesheet" href="styles.css">
+<style>
+  .wrap { max-width: 640px; }
+  table { width: 100%; border-collapse: collapse; font-size: 13px; }
+  th, td { text-align: left; padding: 9px 10px; border-bottom: 1px solid var(--border); }
+  th { color: var(--text-dim); font-weight: 500; }
+  td.mono { font-size: 12px; }
+  .tag { padding: 2px 8px; border-radius: 5px; font-size: 11px; display: inline-block; }
+  .tag.requested { background: rgba(232,163,61,0.15); color: var(--accent); }
+  .tag.verified { background: rgba(79,174,124,0.15); color: var(--success); }
+  .tag.fail { background: rgba(226,96,79,0.15); color: var(--error); }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <div class="mark">
+    Event Summit 2026 &middot; Organizer &middot; Recovery Activity
+  </div>
+  <h1>Access recovery log</h1>
+  <p class="sub">Every self-service recovery attempt, so you can see friction without being pulled into it.</p>
+
+  <div class="card">
+    <table id="table">
+      <thead><tr><th>Time</th><th>Email</th><th>Outcome</th><th>IP</th></tr></thead>
+      <tbody></tbody>
+    </table>
+  </div>
+  <a class="back-link" href="index.html">&larr; Back to sign in</a>
+</div>
+
+<script>
+function tagClass(outcome) {
+  if (outcome === 'verified') return 'verified';
+  if (outcome.startsWith('verify_failed') || outcome === 'rate_limited') return 'fail';
+  return 'requested';
+}
+
+async function load() {
+  const res = await fetch('/api/audit-log');
+  const data = await res.json();
+  const tbody = document.querySelector('#table tbody');
+
+  if (!data.entries.length) {
+    tbody.innerHTML = '<tr><td colspan="4" class="empty">No recovery activity yet.</td></tr>';
+    return;
+  }
+
+  tbody.innerHTML = data.entries.map(e => `
+    <tr>
+      <td class="mono">${new Date(e.timestamp).toLocaleTimeString()}</td>
+      <td>${e.email}</td>
+      <td><span class="tag ${tagClass(e.outcome)}">${e.outcome}</span></td>
+      <td class="mono">${e.ip}</td>
+    </tr>
+  `).join('');
+}
+
+load();
+setInterval(load, 3000);
+</script>
+</body>
+</html>
