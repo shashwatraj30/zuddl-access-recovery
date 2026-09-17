@@ -2,27 +2,134 @@
 
 A self-service "I lost my login link" flow for magic-link event platforms — built as a concept add-on for [Zuddl](https://www.zuddl.com), a B2B event management platform.
 
-**Live demo:** _add your deployed link here once hosted (see Deployment section below)_
-
 License: MIT
 
-## The problem
+---
 
-Zuddl (like a lot of modern event platforms) logs attendees in with a magic link instead of a password — you get an email, you click it, you're in. It's simple, until the email doesn't show up. Maybe it's stuck in spam, maybe it expired, maybe the attendee just closed the tab and can't find it again.
+## The exact use case
 
-When that happens today, the attendee is stuck. They can't fix it themselves — they have to message the event organizer, who then has to escalate to Zuddl's own support team to sort it out. That's not a hypothetical: it's a documented complaint from a real Zuddl customer, who ran a multi-day hackathon and found that attendees who lost their login link had no way back in except organizer-to-Zuddl escalation, sometimes while the event was live.
+Zuddl (like a lot of modern event platforms) logs attendees in with a magic link instead of a password — you register, you get an email, you click it, you're in. No password to remember.
 
-That's the gap this project fixes: **a way for attendees to recover their own access, with no one else involved.**
+Here's where it breaks, in a scenario that actually happens:
 
-## What it does
+> It's 9:58 AM. Priya registered for a virtual summit that starts at 10:00. She goes to find her access email and it's not there — maybe it's in spam, maybe she deleted it while cleaning her inbox. She has two minutes before the keynote and no way in.
+>
+> **Without this feature:** Priya messages the event organizer. The organizer — who is busy running a live event — now has to stop and either dig up her info or escalate to Zuddl support. Priya misses the keynote.
+>
+> **With this feature:** Priya clicks "Can't find your access link?" on the login screen, enters her email, and gets a brand new working link within seconds. She's in before the keynote starts. Nobody else was involved.
 
-One new flow, three screens:
+This isn't a hypothetical. It's a documented complaint from a real Zuddl customer who ran a multi-day hackathon and found that attendees who lost their login link had no way back in except organizer-to-Zuddl escalation — sometimes while the event was live.
 
-1. **Attendee can't log in** → clicks "Can't find your access link?"
-2. **Enters their email** → gets back a message that looks identical whether or not that email is registered (more on why below)
-3. **Gets a fresh one-time link** → clicking it logs them in, and the old link (if one existed) stops working immediately
+**Who this is for:**
+- **Attendees** — get back in themselves, no waiting on anyone
+- **Event organizers** — stop getting pulled into individual login problems mid-event
+- **Zuddl's support team** — fewer manual "please fix this one user" tickets during high-traffic live events
 
-Nothing about Zuddl's actual event, registration, or backstage systems needs to change. This slots in beside the existing login flow and needs exactly one thing from the host platform: a way to look up "does this email belong to an attendee of this event." Everything else — token generation, expiry, rate limiting, logging — is self-contained.
+**The exact problem this solves:** there is no self-service recovery path when a magic link fails to arrive, expires, or gets lost. This project adds one.
+
+---
+
+## How to use it
+
+The flow is the same whether you're clicking through the pages in a browser or hitting the API directly:
+
+1. **Attendee can't log in** → lands on the login screen, clicks **"Can't find your access link?"**
+2. **Enters their email** → submits the recovery form. The response is worded identically whether or not that email is actually registered — this is deliberate, explained below.
+3. **Checks their inbox** → gets a fresh one-time link (in this demo, a mock inbox page shows the "email" instead of a real one being sent)
+4. **Clicks the link** → signed in immediately, and that link is now dead — using it again fails on purpose
+5. **Organizer/support view** → a separate audit page shows every recovery attempt (successful, failed, rate-limited) with a timestamp, so there's a real trail if something needs investigating
+
+That five-step flow is the entire product.
+
+---
+
+## Running it locally
+
+```bash
+git clone https://github.com/shashwatraj30/zuddl-access-recovery.git
+cd zuddl-access-recovery
+npm install
+npm start
+```
+
+Then open **http://localhost:3000** in your browser. That's the login screen — everything else is linked from there.
+
+---
+
+## How to test it (and confirm it's actually working)
+
+This isn't just "does the page load" — the point of this project is the security behavior underneath it. Here's how to check that it's doing what it claims, step by step, with what you should see at each point.
+
+### A. Walk the happy path
+1. Go to `/recover.html`
+2. Enter `priya.sharma@example.com` (a seeded mock attendee) → submit
+3. **Expect:** a confirmation message, no error
+4. Go to `/inbox.html`, select the same email, refresh
+5. **Expect:** a message appears with a link containing a long token
+6. Click that link
+7. **Expect:** you land on `/verify.html` and see "You're in" / a welcome message with the attendee's name
+
+If all of that happens — the core loop works.
+
+### B. Confirm it doesn't leak who's registered (no-enumeration check)
+1. Go back to `/recover.html`
+2. Submit `priya.sharma@example.com` (registered), note the exact message
+3. Submit `nobody@example.com` (not registered), note the exact message
+4. **Expect:** both messages are word-for-word identical
+
+If they differ in any way, that's a real security bug — this check is the one that matters most.
+
+### C. Confirm single-use enforcement
+1. Take a link you already clicked once from step A
+2. Open it again in a new tab
+3. **Expect:** it now says the link was already used, and does **not** log you in a second time
+
+### D. Confirm expired/invalid tokens are rejected
+1. Go to `/verify.html?token=thisisnotarealtoken` directly in the address bar
+2. **Expect:** an "invalid link" message, not a crash and not a login
+
+### E. Confirm rate limiting
+1. On `/recover.html`, submit the same email 4 times in quick succession
+2. **Expect:** the first 3 succeed with the normal message; the 4th returns a "too many requests, try again in Xs" message instead
+
+If the 4th request still succeeds, rate limiting isn't working.
+
+### F. Confirm the audit trail is accurate
+1. After doing A–E above, go to `/audit.html`
+2. **Expect:** every single attempt you made shows up — successful requests, the reused-token failure, the invalid-token failure, and the rate-limited attempts — each tagged with its outcome and a timestamp
+
+If any of your actions from A–E are missing here, logging has a gap.
+
+### Fastest way to test all of this without clicking through pages
+If you have `curl` available, you can hit the API directly and see the raw responses:
+
+```bash
+# Request recovery for a registered email
+curl -X POST http://localhost:3000/api/recover \
+  -H "Content-Type: application/json" \
+  -d '{"email":"priya.sharma@example.com","eventId":"evt_2026_summit"}'
+
+# Request recovery for an UNregistered email — compare this response to the one above
+curl -X POST http://localhost:3000/api/recover \
+  -H "Content-Type: application/json" \
+  -d '{"email":"nobody@example.com","eventId":"evt_2026_summit"}'
+
+# Check what "email" got sent
+curl http://localhost:3000/api/mock-inbox/priya.sharma@example.com
+
+# Verify a token (copy the token value from the inbox response above)
+curl "http://localhost:3000/api/verify?token=PASTE_TOKEN_HERE"
+
+# Try the same token again — should now fail
+curl "http://localhost:3000/api/verify?token=PASTE_TOKEN_HERE"
+
+# View the audit log
+curl http://localhost:3000/api/audit-log
+```
+
+If every one of checks A–F above matches what's "expected," the project is fulfilling its intended outcome: attendees can recover access on their own, without a way to abuse the mechanism to spam, enumerate, or replay their way in.
+
+---
 
 ## Why this isn't just a form with an email field
 
@@ -35,6 +142,8 @@ The interesting part of this project is the backend, not the UI. A recovery flow
 - **Rate limiting on two axes.** Limited per email (stops someone spamming one attendee's inbox) *and* per IP (stops someone sweeping through a list of emails to see which ones exist).
 - **Hashed storage.** The raw token is never stored — only its SHA-256 hash. If the token table leaked, none of the tokens in it would still work.
 - **An audit trail.** Every recovery attempt (requested, rate-limited, verified, failed) is logged with a timestamp and IP, so an organizer or support engineer can actually investigate a specific "I couldn't get in" report after the fact.
+
+---
 
 ## Project structure
 
@@ -55,26 +164,7 @@ zuddl-access-recovery/
     └── audit.html          # Organizer-facing view of recovery activity
 ```
 
-## Running it locally
-
-```bash
-git clone <this-repo>
-cd zuddl-access-recovery
-npm install
-npm start
-```
-
-Then open **http://localhost:3000** in your browser.
-
-### Try the full flow
-
-1. Go to `/recover.html`
-2. Use one of the seeded mock attendees — try `priya.sharma@example.com` (registered) or `nobody@example.com` (not registered), and notice the response is worded exactly the same either way
-3. Go to `/inbox.html` and refresh — you'll see the "email" that got sent, with a real working link
-4. Click the link (or copy it into a new tab) — you'll land on `/verify.html` and get signed in
-5. Try opening the *same* link again — it'll tell you it's already been used
-6. Go to `/recover.html` and submit the same email 4 times quickly — the 4th request gets rate-limited
-7. Check `/audit.html` to see every attempt logged, including the rate-limited ones
+---
 
 ## What would change for a real deployment
 
@@ -87,14 +177,7 @@ This is a working demo against mock data, not a production integration. To actua
 
 None of these are structural changes — the security logic (hashing, single-use, rate limiting, no-enumeration) stays exactly as it is.
 
-## Deployment
-
-This runs as a plain Node/Express app, so any free-tier host that deploys from a GitHub repo works — no special config needed:
-
-- **Render** — connect the repo, set the start command to `npm start`, leave everything else default
-- **Railway** — same idea, auto-detects Node from `package.json`
-
-Once deployed, drop the live URL at the top of this README so it's the first thing a viewer sees.
+---
 
 ## Why this exists
 
